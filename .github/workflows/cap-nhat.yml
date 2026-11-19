@@ -1,0 +1,26 @@
+name: Cập nhật dữ liệu
+on:
+  schedule:
+    - cron: "0 11 * * 1-5"
+    - cron: "0 2 * * 2-6"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tải dữ liệu
+        run: python cap_nhat_du_lieu.py --funds FUEVFVND E1VFVN30 DCDS VESAF VDEF VCBF-BCF VCBF-AIF --days 730 --out du_lieu.json
+      - name: Lưu kết quả
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add du_lieu.json
+          git commit -m "Cập nhật dữ liệu" || echo "Không có thay đổi"
+          git push
