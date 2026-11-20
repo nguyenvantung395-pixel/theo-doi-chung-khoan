@@ -60,6 +60,7 @@ label{display:block;color:var(--mute);margin:8px 0 3px}
 textarea{width:100%;min-height:80px;font-family:ui-monospace,Menlo,monospace}
 .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .scroll{max-height:220px;overflow:auto;margin-top:8px}
+.inl{display:flex;gap:6px;align-items:center;margin:0;color:var(--ink)}.h3{font-size:14px;margin:14px 0 6px}.pfsum .px{font-size:18px}.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px;margin:8px 0}.map select{width:100%}#pfilter{min-width:140px}
 .note{color:var(--mute);font-size:12px;margin-top:6px}
 </style>
 </head>
@@ -71,20 +72,26 @@ textarea{width:100%;min-height:80px;font-family:ui-monospace,Menlo,monospace}
 <section class="card sc"><table id="board"></table></section>
 
 <section class="card" id="pf">
- <div class="bar"><b>Danh mục đầu tư của tôi</b></div>
+ <div class="bar"><b>Danh mục đầu tư của tôi</b><span class="sp"></span><label class="inl">Lọc theo quỹ <select id="pfilter"></select></label></div>
  <div id="pfempty" class="mut"></div><div class="pfsum" id="pfsum"></div><div class="alloc" id="palloc"></div>
  <div class="sc"><table id="pftbl"></table></div>
  <div id="pchart"></div>
- <details id="pfform"><summary>Thêm hoặc xóa giao dịch</summary>
+ <h3 class="h3">Lịch sử giao dịch <span id="pcount" class="mut"></span></h3>
+ <div class="sc scroll" style="max-height:340px"><table id="ptx"></table></div>
+ <details id="pimp"><summary>Nhập từ file Excel, CSV, PDF hoặc file sao lưu</summary>
+  <div class="row"><input type="file" id="pfile" accept=".xlsx,.xls,.csv,.txt,.pdf,.json"></div>
+  <div class="note" id="pimsg" role="status"></div><div id="pmap"></div>
+ </details>
+ <details id="pfform"><summary>Thêm giao dịch thủ công</summary>
   <div class="f"><div><label for="ptype">Loại</label><select id="ptype"><option value="1">Mua</option><option value="-1">Bán</option></select></div>
-  <div><label for="psel">Mã quỹ</label><select id="psel"></select></div>
+  <div><label for="pcode">Mã quỹ</label><input id="pcode" list="pcodes" placeholder="vd DCDS"><datalist id="pcodes"></datalist></div>
   <div><label for="pdt">Ngày</label><input type="date" id="pdt"></div>
   <div><label for="pu">Số CCQ</label><input id="pu" inputmode="decimal"></div>
   <div><label for="pp">Giá/NAV mỗi CCQ (đồng)</label><input id="pp" inputmode="decimal"></div></div>
   <div class="row"><button id="padd" class="on">Lưu giao dịch</button></div><div class="note" id="pmsg" role="status"></div>
-  <div class="scroll"><table id="ptx"></table></div>
  </details>
- <div class="note">Giá hiện tại là NAV mới nhất đã công bố (hoặc giá đóng cửa với ETF). Danh mục chỉ lưu trong trình duyệt của bạn, không đưa lên GitHub, nên hãy sao lưu bằng nút "Sao chép JSON" ở cuối trang.</div>
+ <div class="row"><button id="pbk">Tải file sao lưu danh mục</button><span class="note" id="pbknote"></span></div>
+ <div class="note">Giá hiện tại là NAV mới nhất đã công bố (hoặc giá đóng cửa với ETF). Danh mục chỉ lưu trong trình duyệt của bạn, không đưa lên GitHub. Hãy tải file sao lưu định kỳ và cất ở nơi an toàn (Google Drive, email cho chính mình).</div>
 </section>
 
 <section class="card">
@@ -110,13 +117,15 @@ textarea{width:100%;min-height:80px;font-family:ui-monospace,Menlo,monospace}
 </div></div></details>
 </main>
 <script>
-const KEY='vnidx-fund-tracker-v1',COL=['#f0b90b','#2cd5e5','#c06ef0','#0ecb81','#ff8a4c','#5b9cff','#ff6b9d','#9ad14b'];
+const KEY='vnidx-fund-tracker-v1',KEY2='vnidx-lots-v1',COL=['#f0b90b','#2cd5e5','#c06ef0','#0ecb81','#ff8a4c','#5b9cff','#ff6b9d','#9ad14b'];
 const $=s=>document.querySelector(s),W=860,L=52,R=10;
 let S=load()||demo(),range=180,sel='',mode='single',HV=null;
+try{if(!(S.lots||[]).length){const b=JSON.parse(localStorage.getItem(KEY2));if(b&&b.length)S.lots=b}}catch(e){}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 let AUTO_ERR='';
 const IND={ma20:1,ma50:0,ema:0,bb:0,rsi:1,macd:1};
 function load(){try{const j=JSON.parse(localStorage.getItem(KEY));return j&&j.series?j:null}catch(e){return null}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));localStorage.setItem(KEY2,JSON.stringify(S.lots||[]))}catch(e){}}
 function demo(){let seed=7;const r=()=>(seed=(seed*16807)%2147483647)/2147483647;
  const mk=(id,name,v0,vol,dr)=>{const pts=[];let v=v0;const d=new Date();d.setDate(d.getDate()-300);
   for(let i=0;i<300;i++){d.setDate(d.getDate()+1);if(d.getDay()%6===0)continue;v*=1+dr+(r()-.5)*vol;pts.push({d:d.toISOString().slice(0,10),v:Math.round(v*100)/100})}return{id,name,points:pts}};
@@ -126,7 +135,7 @@ const pct=v=>(v>=0?'+':'')+v.toFixed(2).replace('.',',')+'%',cls=d=>d>0?'up':d<0
 function num(s){s=String(s).trim().replace(/\s/g,'');if(!s)return NaN;
  if(s.includes('.')&&s.includes(','))s=s.replace(/\./g,'').replace(',','.');
  else if(s.includes(',')&&/,\d{1,2}$/.test(s))s=s.replace(',','.');else if(s.includes(','))s=s.replace(/,/g,'');
- else if((s.match(/\./g)||[]).length>1)s=s.replace(/\./g,'');return parseFloat(s)}
+ else if((s.match(/\./g)||[]).length>1||/^[1-9]\d{0,2}\.\d{3}$/.test(s))s=s.replace(/\./g,'');return parseFloat(s)}
 function pdate(s){s=s.trim();let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);if(m)return`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
  m=s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);return m?`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:null}
 function put(s,d,v){const i=s.points.findIndex(p=>p.d===d);if(i>=0)s.points[i].v=v;else s.points.push({d,v});s.points.sort((a,b)=>a.d<b.d?-1:1)}
@@ -232,36 +241,98 @@ function render(){
  document.querySelectorAll('[data-id]').forEach(e=>{if(e.tagName==='TR'||e.classList.contains('tile'))e.onclick=()=>{sel=e.dataset.id;mode='single';render()}});
 }
 /* Danh mục đầu tư */
-const vnd=v=>fmt(v,0);
-function holdings(){const h={};(S.lots||[]).slice().sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0).forEach(l=>{const x=h[l.sid]||(h[l.sid]={units:0,cost:0});x.cost+=l.u>0?l.u*l.p:l.u*(x.units?x.cost/x.units:0);x.units+=l.u});return h}
+const vnd=v=>fmt(v,0),cmpL=(a,b)=>a.d<b.d?-1:a.d>b.d?1:0,uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const serByCode=c=>S.series.find(s=>s.name.toUpperCase()===c);
+const known=()=>[...new Set([...S.series.filter(s=>s.id!=='vni').map(s=>s.name.toUpperCase()),...(S.lots||[]).map(l=>l.c)])];
+function normLots(){S.lots=S.lots||[];S.lots.forEach(l=>{if(!l.c){const s=S.series.find(x=>x.id===l.sid);l.c=s?s.name.toUpperCase():String(l.sid||'?').toUpperCase()}if(!l.id)l.id=uid()})}
+function calcH(lots){const h={};lots.slice().sort(cmpL).forEach(l=>{const x=h[l.c]||(h[l.c]={units:0,cost:0,buy:0,sell:0,last:l.p});
+ if(l.u>0){x.cost+=l.u*l.p;x.buy+=l.u*l.p}else{x.cost+=l.u*(x.units?x.cost/x.units:0);x.sell-=l.u*l.p}x.units+=l.u;x.last=l.p;if(Math.abs(x.units)<1e-6){x.units=0;x.cost=0}});return h}
 function portfolio(){
- const h=holdings(),rows=[];let V=0,C=0;
- S.series.forEach((s,i)=>{const x=h[s.id],l=s.points.at(-1);if(!x||x.units<1e-9)return;const pr=l?l.v:0,val=x.units*pr;V+=val;C+=x.cost;rows.push({s,i,x,pr,val})});
- const lots=(S.lots||[]).slice().sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0),pv=$('#psel').value;
- $('#pfempty').textContent=rows.length?'':'Chưa có giao dịch. Mở mục "Thêm hoặc xóa giao dịch" bên dưới để nhập số chứng chỉ quỹ bạn đang nắm giữ.';
- $('#pfsum').innerHTML=rows.length?`<div class="tile"><b>Tổng giá trị</b><div class="px">${vnd(V)}</div></div><div class="tile"><b>Vốn đang đầu tư</b><div class="px">${vnd(C)}</div></div><div class="tile"><b>Lãi/lỗ</b><div class="px ${cls(V-C)}">${V-C>0?'+':''}${vnd(V-C)}</div><div class="${cls(V-C)}">${C?pct((V/C-1)*100):''}</div></div>`:'';
- $('#palloc').innerHTML=rows.length&&V?rows.map(r=>`<span title="${r.s.name}" style="width:${(r.val/V*100).toFixed(2)}%;background:${COL[r.i%COL.length]}"></span>`).join(''):'';
- $('#pftbl').innerHTML=rows.length?'<tr><th>Mã</th><th>Số CCQ</th><th>Giá vốn TB</th><th>Giá hiện tại</th><th>Giá trị</th><th>Lãi/lỗ</th><th>%</th><th>Tỷ trọng</th></tr>'+rows.map(r=>{const pl=r.val-r.x.cost,c=cls(pl);return`<tr><td><span class="dot" style="background:${COL[r.i%COL.length]}"></span><b>${r.s.name}</b></td><td>${fmt(r.x.units)}</td><td>${vnd(r.x.cost/r.x.units)}</td><td>${vnd(r.pr)}</td><td>${vnd(r.val)}</td><td class="${c}">${pl>0?'+':''}${vnd(pl)}</td><td class="${c}">${r.x.cost?pct(pl/r.x.cost*100):'–'}</td><td>${V?(r.val/V*100).toFixed(1).replace('.',','):'–'}%</td></tr>`}).join(''):'';
+ normLots();const all=S.lots,codes=[...new Set(all.map(l=>l.c))].sort(),sf=$('#pfilter'),f=codes.includes(sf.value)?sf.value:'';
+ sf.innerHTML='<option value="">Tất cả quỹ</option>'+codes.map(c=>`<option${c===f?' selected':''}>${c}</option>`).join('');
+ $('#pcodes').innerHTML=known().map(c=>`<option value="${c}">`).join('');
+ const H=calcH(all),rows=[],keys=Object.keys(H).filter(c=>!f||c===f).sort();let V=0,C=0,B=0,Sl=0;
+ keys.forEach(c=>{const x=H[c];B+=x.buy;Sl+=x.sell;if(!f&&x.units<=0)return;const s=serByCode(c),pr=s&&s.points.length?s.points.at(-1).v:x.last,val=x.units*pr;V+=val;C+=x.cost;rows.push({c,x,s,pr,val,i:s?S.series.indexOf(s):-1})});
+ const fl=f?all.filter(l=>l.c===f):all,tile=(t,v,c)=>`<div class="tile"><b>${t}</b><div class="px ${c||''}">${v}</div></div>`;
+ $('#pfempty').textContent=all.length?'':'Chưa có giao dịch. Mở mục "Nhập từ file" hoặc "Thêm giao dịch thủ công" bên dưới.';
+ $('#pfsum').innerHTML=all.length?(f&&rows[0]?tile('Số CCQ đang giữ',fmt(rows[0].x.units)):'')+tile('Giá trị hiện tại',vnd(V))+tile('Vốn đang đầu tư',vnd(C))+tile('Lãi/lỗ chưa thực hiện',(V-C>0?'+':'')+vnd(V-C)+(C>0?` (${pct((V/C-1)*100)})`:''),cls(V-C))+tile('Tổng tiền mua',vnd(B))+tile('Tổng tiền bán',vnd(Sl)):'';
+ const col=r=>r.i>=0?COL[r.i%COL.length]:'var(--mute)';
+ $('#palloc').innerHTML=!f&&V>0?rows.map(r=>`<span title="${r.c}" style="width:${(r.val/V*100).toFixed(2)}%;background:${col(r)}"></span>`).join(''):'';
+ $('#pftbl').innerHTML=rows.length?'<tr><th>Mã</th><th>Số CCQ</th><th>Giá vốn TB</th><th>Giá hiện tại</th><th>Giá trị</th><th>Lãi/lỗ</th><th>%</th><th>Tỷ trọng</th></tr>'+rows.map(r=>{const pl=r.val-r.x.cost,c=cls(pl);
+  return`<tr data-c="${r.c}" style="cursor:pointer"><td><span class="dot" style="background:${col(r)}"></span><b>${r.c}</b>${r.s?'':' <span class="mut" title="Chưa theo dõi giá, dùng giá giao dịch gần nhất">*</span>'}</td><td>${fmt(r.x.units)}</td><td>${r.x.units?vnd(r.x.cost/r.x.units):'–'}</td><td>${vnd(r.pr)}</td><td>${vnd(r.val)}</td><td class="${c}">${pl>0?'+':''}${vnd(pl)}</td><td class="${c}">${r.x.cost>0?pct(pl/r.x.cost*100):'–'}</td><td>${V>0?(r.val/V*100).toFixed(1).replace('.',','):'–'}%</td></tr>`}).join(''):'';
+ $('#pftbl').querySelectorAll('tr[data-c]').forEach(t=>t.onclick=()=>{sf.value=t.dataset.c;portfolio()});
  /* biểu đồ giá trị danh mục và vốn ròng */
- const ids=[...new Set(lots.map(l=>l.sid))],ser=ids.map(id=>S.series.find(s=>s.id===id)).filter(s=>s&&s.points.length);let ch='';
- if(ser.length){const ds=[...new Set(ser.flatMap(s=>s.points.map(p=>p.d)).concat(lots.map(l=>l.d)))].filter(d=>d>=lots[0].d).sort(),ptr=ser.map(()=>-1);let V1=[],N1=[];
-  ds.forEach(d=>{let v=0,n=0;ser.forEach((s,k)=>{while(ptr[k]+1<s.points.length&&s.points[ptr[k]+1].d<=d)ptr[k]++;const p=s.points[Math.max(ptr[k],0)].v;let u=0;lots.forEach(l=>{if(l.sid===s.id&&l.d<=d){u+=l.u;n+=l.u*l.p}});v+=u*p});V1.push([T(d),v/1e6]);N1.push([T(d),n/1e6])});
-  const end=V1.at(-1)?V1.at(-1)[0]:0,st=range?end-range*864e5:0;V1=V1.filter(q=>q[0]>=st);N1=N1.filter(q=>q[0]>=st);
+ const ser=[...new Set(fl.map(l=>l.c))].map(serByCode).filter(s=>s&&s.points.length);let ch='';
+ if(ser.length){const d0=fl.map(l=>l.d).sort()[0],ds=[...new Set(ser.flatMap(s=>s.points.map(p=>p.d)).concat(fl.map(l=>l.d)))].filter(d=>d>=d0).sort(),ptr=ser.map(()=>-1);let V1=[],N1=[];
+  ds.forEach(d=>{let v=0,n=0;ser.forEach((s,k)=>{while(ptr[k]+1<s.points.length&&s.points[ptr[k]+1].d<=d)ptr[k]++;const p=s.points[Math.max(ptr[k],0)].v,cd=s.name.toUpperCase();let u=0;fl.forEach(l=>{if(l.c===cd&&l.d<=d){u+=l.u;n+=l.u*l.p}});v+=u*p});V1.push([T(d),v/1e6]);N1.push([T(d),n/1e6])});
+  const end=V1.length?V1.at(-1)[0]:0,st=range?end-range*864e5:0;V1=V1.filter(q=>q[0]>=st);N1=N1.filter(q=>q[0]>=st);
   if(V1.length>1)ch=panel(220,V1[0][0],V1.at(-1)[0],[{p:V1,c:'var(--px)',w:2,area:1},{p:N1,c:'var(--mute)',w:1.4,dash:'4 3'}],{axis:1,label:'Giá trị danh mục (xanh) và vốn ròng (xám đứt), triệu đồng'})}
  $('#pchart').innerHTML=ch;
- $('#psel').innerHTML=S.series.filter(s=>s.id!=='vni').map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(pv&&S.series.find(s=>s.id===pv))$('#psel').value=pv;
- if(!$('#pp').value)prefill();
- $('#ptx').innerHTML=lots.length?'<tr><th>Ngày</th><th>Loại</th><th>Mã</th><th>Số CCQ</th><th>Giá</th><th></th></tr>'+lots.slice().reverse().slice(0,40).map(l=>{const s=S.series.find(x=>x.id===l.sid);return`<tr><td>${l.d.split('-').reverse().join('/')}</td><td class="${l.u>0?'up':'dn'}">${l.u>0?'Mua':'Bán'}</td><td>${s?s.name:l.sid}</td><td>${fmt(Math.abs(l.u))}</td><td>${vnd(l.p)}</td><td><button data-lot="${l.id}">Xóa</button></td></tr>`}).join(''):'';
+ const tx=fl.slice().sort((a,b)=>cmpL(b,a));$('#pcount').textContent=tx.length?`(${tx.length} giao dịch${f?' của '+f:''})`:'';
+ $('#ptx').innerHTML=tx.length?'<tr><th>Ngày</th><th>Loại</th><th>Mã</th><th>Số CCQ</th><th>Giá/NAV</th><th>Giá trị</th><th></th></tr>'+tx.map(l=>`<tr><td>${l.d.split('-').reverse().join('/')}</td><td class="${l.u>0?'up':'dn'}">${l.u>0?'Mua':'Bán'}</td><td>${l.c}</td><td>${fmt(Math.abs(l.u))}</td><td>${vnd(l.p)}</td><td>${vnd(Math.abs(l.u)*l.p)}</td><td><button data-lot="${l.id}">Xóa</button></td></tr>`).join('')
+  +`<tr><td colspan="3"><b>Tổng</b></td><td><b>${fmt(fl.reduce((a,l)=>a+l.u,0))}</b></td><td></td><td colspan="2"><b>Mua ${vnd(B)} · Bán ${vnd(Sl)}</b></td></tr>`:'';
  $('#ptx').querySelectorAll('[data-lot]').forEach(b=>b.onclick=()=>{S.lots=S.lots.filter(l=>l.id!==b.dataset.lot);save();render()});
+ const bk=S.bk?new Date(S.bk).toLocaleDateString('vi-VN'):'chưa sao lưu lần nào';$('#pbknote').textContent=all.length?'Sao lưu gần nhất: '+bk:'';
 }
-function prefill(){const s=S.series.find(x=>x.id===$('#psel').value),l=s&&s.points.at(-1);$('#pp').value=l?String(l.v).replace('.',','):''}
-const pmsg=t=>$('#pmsg').textContent=t;
-$('#psel').onchange=prefill;
-$('#padd').onclick=()=>{const sid=$('#psel').value,d=pdate($('#pdt').value||''),u=num($('#pu').value),p=num($('#pp').value),t=+$('#ptype').value;
- if(!sid||!d||!(u>0)||!(p>0))return pmsg('Hãy chọn mã, ngày và nhập số CCQ, giá lớn hơn 0.');
- S.lots=S.lots||[];const lot={id:String(Date.now()),sid,d,u:t*u,p};S.lots.push(lot);
- const x=holdings()[sid];if(t<0&&(!x||x.units<-1e-9)){S.lots.pop();return pmsg('Số CCQ bán lớn hơn số đang nắm giữ tại ngày đó.')}
+$('#pfilter').onchange=portfolio;
+function prefill(){const s=serByCode($('#pcode').value.trim().toUpperCase()),l=s&&s.points.at(-1);if(l)$('#pp').value=String(l.v).replace('.',',')}
+$('#pcode').onchange=prefill;
+const pmsg=t=>$('#pmsg').textContent=t,imsg=t=>$('#pimsg').textContent=t;
+$('#padd').onclick=()=>{const c=$('#pcode').value.trim().toUpperCase(),d=pdate($('#pdt').value||''),u=num($('#pu').value),p=num($('#pp').value),t=+$('#ptype').value;
+ if(!c||!d||!(u>0)||!(p>0))return pmsg('Hãy nhập mã quỹ, ngày, số CCQ và giá lớn hơn 0.');
+ S.lots.push({id:uid(),c,d,u:t*u,p});if(t<0&&calcH(S.lots)[c].units<-1e-6){S.lots.pop();return pmsg('Số CCQ bán lớn hơn số đang nắm giữ.')}
  save();$('#pu').value='';render();pmsg('Đã lưu giao dịch.')};
+$('#pbk').onclick=()=>{const b=new Blob([JSON.stringify({saved:new Date().toISOString(),lots:S.lots||[]})],{type:'application/json'}),a=document.createElement('a');
+ a.href=URL.createObjectURL(b);a.download='danh-muc-'+new Date().toISOString().slice(0,10)+'.json';a.click();S.bk=new Date().toISOString();save();$('#pbknote').textContent='Đã tải file sao lưu hôm nay.'};
+function addLots(arr){normLots();const key=l=>`${l.c}|${l.d}|${(+l.u).toFixed(4)}|${(+l.p).toFixed(2)}`,have=new Set(S.lots.map(key));let n=0,sk=0;
+ arr.forEach(l=>{if(!l||!l.c||!toDate(l.d)||!(Math.abs(l.u)>0)||!(l.p>0)){sk++;return}const x={id:uid(),c:String(l.c).toUpperCase(),d:toDate(l.d),u:+l.u,p:+l.p};if(have.has(key(x))){sk++;return}have.add(key(x));S.lots.push(x);n++});
+ if(n){save();render()}return{n,sk}}
+
+/* Nhập từ file */
+function toDate(v){if(v instanceof Date)return new Date(+v+432e5).toISOString().slice(0,10);if(typeof v==='number'&&v>20000&&v<80000)return new Date(Date.UTC(1899,11,30)+v*864e5).toISOString().slice(0,10);
+ return pdate(String(v==null?'':v).trim().replace(/[T\s].*$/,''))}
+function parseCSV(t){t=t.replace(/^\uFEFF/,'');const ln=t.split(/\r?\n/).find(l=>l.trim())||'',dl=[['\t',(ln.match(/\t/g)||[]).length],[';',(ln.match(/;/g)||[]).length],[',',(ln.match(/,/g)||[]).length]].sort((a,b)=>b[1]-a[1])[0][0],rows=[];
+ let row=[],f='',q=false;for(let i=0;i<t.length;i++){const ch=t[i];
+  if(q){if(ch==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=ch}
+  else if(ch==='"')q=true;else if(ch===dl){row.push(f);f=''}else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;row.push(f);rows.push(row);row=[];f=''}else f+=ch}
+ row.push(f);rows.push(row);return rows}
+const LIBS={},lib=u=>LIBS[u]||(LIBS[u]=new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=()=>no(new Error('Không tải được thư viện đọc file, hãy kiểm tra kết nối Internet.'));document.head.appendChild(s)}));
+async function readPdf(f){const B='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';await lib(B+'pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc=B+'pdf.worker.min.js';
+ const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise,rows=[];
+ for(let p=1;p<=pdf.numPages;p++){const tc=await(await pdf.getPage(p)).getTextContent(),ls=[];
+  tc.items.forEach(it=>{if(!it.str.trim())return;const y=Math.round(it.transform[5]/3);let l=ls.find(q=>Math.abs(q.y-y)<=1);if(!l)ls.push(l={y,c:[]});l.c.push({x:it.transform[4],w:it.width,t:it.str.trim()})});
+  ls.sort((a,b)=>b.y-a.y).forEach(l=>{l.c.sort((a,b)=>a.x-b.x);const cells=[];let pv=null;l.c.forEach(c=>{if(pv&&c.x-(pv.x+pv.w)<4)cells[cells.length-1]+=' '+c.t;else cells.push(c.t);pv=c});rows.push(cells)})}
+ return rows}
+$('#pfile').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const n=f.name.toLowerCase();imsg('Đang đọc file…');$('#pmap').innerHTML='';
+ try{let rows;
+  if(n.endsWith('.json')){const j=JSON.parse(await f.text());if(!Array.isArray(j.lots))throw new Error('File JSON này không chứa danh sách giao dịch (lots).');const r=addLots(j.lots);return imsg(`Đã khôi phục ${r.n} giao dịch${r.sk?`, bỏ qua ${r.sk} giao dịch trùng hoặc lỗi`:''}.`)}
+  if(n.endsWith('.csv')||n.endsWith('.txt'))rows=parseCSV(await f.text());
+  else if(n.endsWith('.xlsx')||n.endsWith('.xls')){await lib('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');const wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true});rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true})}
+  else if(n.endsWith('.pdf'))rows=await readPdf(f);else throw new Error('Định dạng file chưa được hỗ trợ.');
+  showMap(rows)}catch(err){imsg('Lỗi: '+err.message)}};
+function parseRow(r,m,dc){const g=k=>m[k]>=0?r[m[k]]:'',d=toDate(g('d'));if(!d)return null;
+ let c=String(g('c')==null?'':g('c')).trim().toUpperCase();
+ if(c){const hit=known().sort((a,b)=>b.length-a.length).find(k=>c===k||c.includes(k));if(hit)c=hit;else if(c.length>16)return null}else c=(dc||'').trim().toUpperCase();
+ if(!c)return null;const nv=v=>typeof v==='number'?v:num(v);let u=nv(g('u')),p=nv(g('p')),a=Math.abs(nv(g('a')));const t=String(g('t')||'').toLowerCase(),sell=/bán|rút|redeem|sell|chuyển đi/.test(t)||(!t&&u<0);u=Math.abs(u);
+ if(!(u>0)&&a>0&&p>0)u=a/p;if(!(p>0)&&a>0&&u>0)p=a/u;return u>0&&p>0?{c,d,u:sell?-u:u,p}:null}
+function showMap(rows){
+ rows=rows.filter(r=>r&&r.some(c=>String(c==null?'':c).trim()!==''));if(!rows.length)return imsg('File không có dữ liệu.');
+ const kw=/ngày|date|mã|quỹ|fund|loại|số lượng|ccq|nav|giá|price|số tiền|amount|units/i;
+ const hi=rows.slice(0,25).findIndex(r=>r.filter(c=>typeof c==='string'&&kw.test(c)).length>=3),hdr=hi>=0?rows[hi].map(c=>String(c==null?'':c).trim()):null,body=rows.slice(hi+1);
+ const sample=body.find(r=>r.some(c=>toDate(c)))||body[0]||[],n=Math.max(...rows.slice(0,60).map(r=>r.length));
+ const F=[['d','Ngày'],['c','Mã quỹ'],['t','Loại (mua/bán)'],['u','Số CCQ'],['p','Giá/NAV'],['a','Số tiền']],
+ R={d:/ngày|date/i,c:/^(?!.*(số|lượng)).*(mã|tên quỹ|quỹ|fund|symbol)/i,t:/loại|lệnh|type|mua\/bán|hình thức/i,u:/số\s*(lượng|ccq)|^sl$|units|quantity|ccq/i,p:/nav|giá(?!\s*trị)|price/i,a:/giá trị|số tiền|thành tiền|amount|tiền/i},m={};
+ F.forEach(([k])=>{m[k]=hdr?hdr.findIndex((h,j)=>R[k].test(h)&&!Object.values(m).includes(j)):-1});
+ if(!hdr)m.d=sample.findIndex(c=>toDate(c));
+ const opt=j=>`${j+1}. ${hdr&&hdr[j]?hdr[j]:'Cột '+(j+1)}${sample[j]!=null&&sample[j]!==''?' ('+String(sample[j]).slice(0,16)+')':''}`;
+ $('#pmap').innerHTML=`<div class="note">Kiểm tra cột nào là gì, rồi xem bảng xem trước bên dưới.</div><div class="map">`+F.map(([k,l])=>`<div><label>${l}</label><select data-k="${k}"><option value="-1">— không có —</option>${Array.from({length:n},(_,j)=>`<option value="${j}"${m[k]===j?' selected':''}>${opt(j)}</option>`).join('')}</select></div>`).join('')
+  +`<div><label>Mã quỹ mặc định (khi file không có cột mã)</label><input id="pdef" list="pcodes" placeholder="vd DCDS"></div></div><div class="sc"><table id="pprev"></table></div><div class="row"><button id="pgo" class="on">Nhập các giao dịch này</button></div>`;
+ let ok=[];const prev=()=>{const mm={};$('#pmap').querySelectorAll('select[data-k]').forEach(s=>mm[s.dataset.k]=+s.value);const dc=$('#pdef').value;
+  const all=body.map(r=>parseRow(r,mm,dc));ok=all.filter(Boolean);
+  $('#pprev').innerHTML='<tr><th>Ngày</th><th>Mã</th><th>Loại</th><th>Số CCQ</th><th>Giá/NAV</th></tr>'+ok.slice(0,8).map(x=>`<tr><td>${x.d.split('-').reverse().join('/')}</td><td>${x.c}</td><td class="${x.u>0?'up':'dn'}">${x.u>0?'Mua':'Bán'}</td><td>${fmt(Math.abs(x.u),4)}</td><td>${vnd(x.p)}</td></tr>`).join('');
+  imsg(`Đọc được ${ok.length} giao dịch hợp lệ, ${body.length-ok.length} dòng bị bỏ qua (tiêu đề, dòng trống hoặc thiếu dữ liệu).`)};
+ $('#pmap').querySelectorAll('select,input').forEach(e=>e.onchange=prev);$('#pdef').oninput=prev;prev();
+ $('#pgo').onclick=()=>{if(!ok.length)return imsg('Chưa có giao dịch hợp lệ. Hãy chọn lại các cột.');const r=addLots(ok);$('#pmap').innerHTML='';imsg(`Đã nhập ${r.n} giao dịch${r.sk?`, bỏ qua ${r.sk} giao dịch đã có`:''}.`)}}
 
 $('#esel').onchange=e=>{sel=e.target.value;render()};
 $('#add').onclick=()=>{const s=S.series.find(x=>x.id===sel),d=pdate($('#dt').value||''),v=num($('#val').value);
